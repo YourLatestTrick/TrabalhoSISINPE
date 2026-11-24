@@ -5,7 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.165.0",
     "pyserial>=3.5",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
@@ -14,3 +16,10 @@ trabalho-g2-sisinpe = "trabalho_g2_sisinpe:main"
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+]

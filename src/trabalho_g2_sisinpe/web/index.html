@@ -1,11 +1,201 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sisinpe</title>
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>SISINPE | Monitoramento</title>
+
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
-  
+
+    <header>
+        <div>
+            <h1>SISINPE</h1>
+
+            <p>
+                Sistema Inteligente de Prevenção de Enchentes
+            </p>
+        </div>
+
+        <div id="connection-status">
+            API: verificando...
+        </div>
+    </header>
+
+    <main>
+
+        <section class="cards">
+
+            <article class="card">
+                <h2>Distância do ultrassônico</h2>
+
+                <p id="distance">
+                    -- cm
+                </p>
+            </article>
+
+            <article class="card">
+                <h2>Sensor de água</h2>
+
+                <p id="water">
+                    --
+                </p>
+            </article>
+
+            <article class="card">
+                <h2>Classificação</h2>
+
+                <p id="risk">
+                    --
+                </p>
+            </article>
+
+            <article class="card">
+                <h2>Tentativas de rotação</h2>
+
+                <p id="attempts">
+                    --
+                </p>
+            </article>
+
+            <article class="card">
+                <h2>Estado do mecanismo</h2>
+                <p id="mechanism">--</p>
+            </article>
+
+        </section>
+
+        <section class="panel">
+            <h2>Última medição</h2>
+
+            <p id="measurement-time">
+                Aguardando dados...
+            </p>
+
+            <p id="measurement-details">
+                --
+            </p>
+        </section>
+
+        <section class="panel">
+
+            <h2>Alertas</h2>
+
+            <div id="alerts">
+                Nenhum alerta carregado.
+            </div>
+
+        </section>
+
+        <section class="panel">
+
+            <h2>Eventos recentes</h2>
+
+            <div id="events">
+                Nenhum evento carregado.
+            </div>
+
+        </section>
+
+        <section class="panel simulation">
+
+            <h2>Simulação de sensores</h2>
+
+            <p>
+                Esta seção permite testar o backend sem o Arduino.
+            </p>
+
+            <form id="simulation-form">
+
+                <label>
+                    Distância do ultrassônico (cm)
+
+                    <input
+                        type="number"
+                        name="distance_cm"
+                        min="0"
+                        max="400"
+                        step="0.1"
+                        value="25"
+                        required
+                    >
+                </label>
+
+                <label>
+                    Sensor de água
+
+                    <select name="water_detected">
+
+                        <option value="false">
+                            Seco
+                        </option>
+
+                        <option value="true">
+                            Água detectada
+                        </option>
+
+                    </select>
+                </label>
+
+                <label>
+                    Tentativas de rotação
+
+                    <input
+                        type="number"
+                        name="rotation_attempts"
+                        min="0"
+                        max="3"
+                        value="0"
+                    >
+                </label>
+
+                <label>
+                    Resultado da rotação
+
+                    <select name="rotation_success">
+
+                        <option value="">
+                            Não informado
+                        </option>
+
+                        <option value="true">
+                            Sucesso
+                        </option>
+
+                        <option value="false">
+                            Falha
+                        </option>
+
+                    </select>
+                </label>
+
+                <button type="submit">
+                    Enviar simulação
+                </button>
+
+            </form>
+
+            <p id="simulation-result"></p>
+
+        </section>
+
+    </main>
+
+    <footer>
+
+        <p>
+            SISINPE — Projeto de Arquitetura de Hardware
+        </p>
+
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+
 </body>
+
 </html>

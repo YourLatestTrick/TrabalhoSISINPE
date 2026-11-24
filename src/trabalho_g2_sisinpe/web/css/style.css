@@ -1,0 +1,181 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+
+    font-family: Arial, Helvetica, sans-serif;
+
+    background: #f1f5f9;
+
+    color: #1e293b;
+}
+
+header {
+    background: #0f172a;
+
+    color: white;
+
+    padding: 24px 5%;
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    gap: 20px;
+}
+
+header h1 {
+    margin: 0;
+}
+
+header p {
+    margin-bottom: 0;
+
+    color: #cbd5e1;
+}
+
+#connection-status {
+    padding: 10px 16px;
+
+    border-radius: 20px;
+
+    background: #334155;
+}
+
+main {
+    width: 90%;
+
+    max-width: 1200px;
+
+    margin: 30px auto;
+}
+
+.cards {
+    display: grid;
+
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(220px, 1fr)
+    );
+
+    gap: 20px;
+}
+
+.card,
+.panel {
+    background: white;
+
+    padding: 24px;
+
+    border-radius: 12px;
+
+    box-shadow: 0 2px 8px #00000010;
+
+    margin-bottom: 20px;
+}
+
+.card h2,
+.panel h2 {
+    font-size: 18px;
+
+    margin-top: 0;
+}
+
+.card p {
+    font-size: 28px;
+
+    font-weight: bold;
+
+    margin-bottom: 0;
+}
+
+.panel {
+    margin-top: 25px;
+}
+
+label {
+    display: block;
+
+    margin-bottom: 15px;
+
+    font-weight: bold;
+}
+
+input,
+select {
+    display: block;
+
+    width: 100%;
+
+    padding: 10px;
+
+    margin-top: 8px;
+
+    border: 1px solid #cbd5e1;
+
+    border-radius: 6px;
+}
+
+button {
+    padding: 12px 20px;
+
+    background: #2563eb;
+
+    color: white;
+
+    border: none;
+
+    border-radius: 6px;
+
+    cursor: pointer;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+.item {
+    padding: 12px;
+
+    margin-bottom: 10px;
+
+    background: #f8fafc;
+
+    border-left: 4px solid #64748b;
+
+    border-radius: 4px;
+}
+
+.item.critical {
+    border-left-color: #dc2626;
+}
+
+.item.warning {
+    border-left-color: #f59e0b;
+}
+
+footer {
+    text-align: center;
+
+    padding: 20px;
+
+    color: #64748b;
+}
+
+@media (max-width: 600px) {
+
+    header {
+        flex-direction: column;
+
+        align-items: flex-start;
+    }
+
+    main {
+        width: 95%;
+    }
+
+}
