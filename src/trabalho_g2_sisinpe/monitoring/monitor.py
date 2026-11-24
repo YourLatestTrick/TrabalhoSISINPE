@@ -6,12 +6,16 @@ SERIAL_PORT = "/dev/ttyACM0"
 BAUD_RATE = 9600
 DISTANCE_LIMIT = 5.0
 
+current_state = {
+    "flood_alert": None,
+    "trash_needs_pickup": None,
+}
+
 def flood_alert(water):
     return {
         "event": "flood_alert",
         "water": water,
     }
-
 
 def trash_alert(distance):
     return {
@@ -51,17 +55,21 @@ def monitor_system():
                 if water and not flood_alerted:
                     flood_alerted = True
                     alert = flood_alert(water)
+                    current_state["flood_alert"] = alert
                     print(alert)
                 elif not water:
                     flood_alerted = False
+                    current_state["flood_alert"] = None
 
                 # Trash alert
                 if 0 < distance <= DISTANCE_LIMIT and not trash_alerted:
                     trash_alerted = True
                     alert = trash_alert(distance)
+                    current_state["trash_needs_pickup"] = alert
                     print(alert)
                 elif distance > DISTANCE_LIMIT or distance < 0:
                     trash_alerted = False
+                    current_state["trash_needs_pickup"] = None
             else:
                 time.sleep(0.01)
                 
