@@ -22,7 +22,7 @@ SERIAL_PORT = os.getenv(
 
 import threading
 
-parar_monitor = threading.Event()
+_evento_parada_monitor = threading.Event()
 _thread_monitor = None
 
 
@@ -87,7 +87,7 @@ def monitor_system():
 
             print("Arduino conectado. Monitoramento iniciado.")
 
-            while not parar_monitor.is_set():
+            while not _evento_parada_monitor.is_set():
                 raw = connection.readline()
 
                 if not raw:
@@ -179,7 +179,7 @@ def iniciar_monitor():
     if _thread_monitor is not None and _thread_monitor.is_alive():
         return _thread_monitor
 
-    parar_monitor.clear()
+    _evento_parada_monitor.clear()
     _thread_monitor = threading.Thread(
         target=monitor_system,
         name="sisinpe-monitor",
@@ -190,7 +190,7 @@ def iniciar_monitor():
 
 
 def parar_monitor():
-    parar_monitor.set()
+    _evento_parada_monitor.set()
 
 
 if __name__ == "__main__":

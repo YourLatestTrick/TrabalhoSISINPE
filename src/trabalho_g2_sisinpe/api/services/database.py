@@ -287,3 +287,23 @@ def resolver_alerta(alerta_id):
         ))
 
         return cursor.rowcount > 0
+
+def limpar_alertas_eventos():
+    """
+    Remove todos os alertas e eventos registrados.
+    Preserva o histórico de medições.
+    """
+
+    with conectar() as conn:
+        cursor_alertas = conn.execute(
+            "DELETE FROM alerts"
+        )
+
+        cursor_eventos = conn.execute(
+            "DELETE FROM events"
+        )
+
+        return {
+            "alertas_removidos": cursor_alertas.rowcount,
+            "eventos_removidos": cursor_eventos.rowcount,
+        }

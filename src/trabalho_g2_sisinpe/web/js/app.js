@@ -348,6 +348,124 @@ if (simulationForm) {
     });
 }
 
+// Simulações rápidas pelo dashboard.
+const simulationScenarios = {
+    normal: {
+        distance_cm: 25,
+        water_detected: false,
+        rotation_attempts: 0,
+        rotation_success: null,
+        event_code: null
+    },
+
+    water: {
+        distance_cm: 25,
+        water_detected: true,
+        rotation_attempts: 0,
+        rotation_success: null,
+        event_code: null
+    },
+
+    obstruction: {
+        distance_cm: 4,
+        water_detected: false,
+        rotation_attempts: 0,
+        rotation_success: null,
+        event_code: null
+    },
+
+    failure: {
+        distance_cm: 4,
+        water_detected: false,
+        rotation_attempts: 3,
+        rotation_success: false,
+        event_code: "TRASH_REMOVAL_REQUIRED"
+    }
+};
+
+document.querySelectorAll("[data-scenario]").forEach(button => {
+    button.addEventListener("click", () => {
+        const scenario = simulationScenarios[
+            button.dataset.scenario
+        ];
+
+        if (!scenario || !simulationForm) return;
+
+        simulationForm.elements.distance_cm.value =
+            scenario.distance_cm;
+
+        simulationForm.elements.water_detected.value =
+            String(scenario.water_detected);
+
+        simulationForm.elements.rotation_attempts.value =
+            scenario.rotation_attempts;
+
+        simulationForm.elements.rotation_success.value =
+            scenario.rotation_success === null
+                ? ""
+                : String(scenario.rotation_success);
+
+        simulationForm.requestSubmit();
+    });
+});
+
+// Limpar alertas e eventos.
+const clearRecordsButton = document.getElementById(
+    "clear-records-button"
+);
+
+if (clearRecordsButton) {
+    clearRecordsButton.addEventListener("click", async () => {
+
+        const confirmation = confirm(
+            "Tem certeza que deseja apagar TODOS os alertas e eventos registrados?\n\n" +
+            "O histórico de medições será preservado."
+        );
+
+        if (!confirmation) {
+            return;
+        }
+
+        const resultElement = document.getElementById(
+            "clear-records-result"
+        );
+
+        clearRecordsButton.disabled = true;
+        resultElement.textContent = "Limpando registros...";
+
+        try {
+            const response = await fetch(
+                `${API_URL}/alerts/events`,
+                {
+                    method: "DELETE"
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "Erro ao limpar registros."
+                );
+            }
+
+            resultElement.textContent =
+                `${result.alertas_removidos} alertas e ` +
+                `${result.eventos_removidos} eventos removidos.`;
+
+            await atualizarDashboard();
+
+        } catch (error) {
+
+            resultElement.textContent =
+                `Erro: ${error.message}`;
+
+        } finally {
+            clearRecordsButton.disabled = false;
+        }
+    });
+}
+
 atualizarDashboard();
 
 setInterval(atualizarDashboard, 5000);

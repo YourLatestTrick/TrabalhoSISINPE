@@ -106,6 +106,20 @@
                 Nenhum evento carregado.
             </div>
 
+            <div class="clear-records">
+
+                <button
+                    type="button"
+                    id="clear-records-button"
+                    class="button-danger"
+                >
+                    Limpar alertas e eventos
+                </button>
+
+                <p id="clear-records-result"></p>
+
+            </div>
+
         </section>
 
         <section class="panel simulation">
@@ -115,6 +129,26 @@
             <p>
                 Esta seção permite testar o backend sem o Arduino.
             </p>
+
+            <div class="simulation-buttons">
+
+                <button type="button" data-scenario="normal">
+                    Simular situação normal
+                </button>
+
+                <button type="button" data-scenario="water">
+                    Simular presença de água
+                </button>
+
+                <button type="button" data-scenario="obstruction">
+                    Simular obstrução
+                </button>
+
+                <button type="button" data-scenario="failure">
+                    Simular falha após 3 tentativas
+                </button>
+
+            </div>
 
             <form id="simulation-form">
 

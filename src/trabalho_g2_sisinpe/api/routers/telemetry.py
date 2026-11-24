@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from ..services.database import (
     buscar_ultima_medicao,
     buscar_medicoes,
+    registrar_evento,
 )
 
 from ..services.monitoring_service import processar_medicao
@@ -75,6 +76,22 @@ def simular_medicao(medicao: MedicaoRequest):
         rotation_success=medicao.rotation_success,
         event_code=medicao.event_code,
     )
+
+    # Registra também as simulações em condição normal.
+    if resultado["risk"]["nivel"] == "NORMAL":
+
+        registrar_evento(
+            event_type="NORMAL_STATE",
+            description=(
+                "Simulação concluída: condições normais. "
+                "Nenhum lixo ou água detectados."
+            ),
+            details={
+                "measurement_id": resultado["measurement_id"],
+                "distance_cm": medicao.distance_cm,
+                "water_detected": medicao.water_detected,
+            },
+        )
 
     return {
         "status": "processed",

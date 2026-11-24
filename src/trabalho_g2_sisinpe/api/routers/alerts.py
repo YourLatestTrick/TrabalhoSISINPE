@@ -4,6 +4,7 @@ from ..services.database import (
     buscar_alertas,
     buscar_eventos,
     resolver_alerta,
+    limpar_alertas_eventos,
 )
 
 
@@ -61,4 +62,18 @@ def listar_eventos(limit: int = 100):
     return {
         "total": len(eventos),
         "data": eventos,
+    }
+
+@router.delete("/alerts/events")
+def limpar_registros():
+    """
+    Remove todos os alertas e eventos registrados.
+    """
+
+    resultado = limpar_alertas_eventos()
+
+    return {
+        "status": "success",
+        "message": "Alertas e eventos removidos.",
+        **resultado,
     }
