@@ -14,3 +14,20 @@ def verificar_saude():
         "sistema": "SISINPE",
         "mensagem": "API funcionando corretamente.",
     }
+
+@router.get("/serial/status")
+def status_serial():
+    from ..services.serial_service import verificar_disponibilidade
+
+    return verificar_disponibilidade()
+
+
+@router.post("/serial/status")
+def atualizar_status_serial(payload: dict):
+    from ..services.serial_service import atualizar_estado_conexao
+
+    return atualizar_estado_conexao(
+        payload.get("connected", False),
+        payload.get("message"),
+        payload.get("port"),
+    )

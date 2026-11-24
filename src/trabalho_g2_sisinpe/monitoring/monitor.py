@@ -1,10 +1,26 @@
-import serial
-import time
-import sys
 
-SERIAL_PORT = "/dev/ttyACM0"
-BAUD_RATE = 9600
-DISTANCE_LIMIT = 5.0
+import os
+import time
+
+import httpx
+import serial
+
+from trabalho_g2_sisinpe.api.services.serial_service import (
+    BAUD_RATE,
+    SERIAL_PORT,
+    interpretar_mensagem,
+)
+
+API_URL = os.getenv(
+    "SISINPE_API_URL",
+    "http://127.0.0.1:8000"
+)
+
+SERIAL_PORT = os.getenv(
+    "SISINPE_SERIAL_PORT",
+    SERIAL_PORT
+)
+
 
 def flood_alert(water):
     return {
@@ -19,57 +35,141 @@ def trash_alert(distance):
         "distance_cm": distance,
     }
 
+
+def enviar_estado_conexao(client, connected, message):
+    try:
+        client.post(
+            f"{API_URL}/serial/status",
+            json={
+                "connected": connected,
+                "message": message,
+                "port": SERIAL_PORT,
+            },
+            timeout=3.0,
+        )
+
+    except httpx.HTTPError as exc:
+        print(
+            f"Não foi possível atualizar o status Serial na API: {exc}"
+        )
+
+
 def monitor_system():
-    print(f"Conectando ao Arduino")
+    print(
+        f"Conectando ao Arduino em {SERIAL_PORT} "
+        f"({BAUD_RATE} baud)"
+    )
+
     flood_alerted = False
     trash_alerted = False
-    connection = None
 
-    try:
-        connection = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2)
-        
-        while True:
-            if connection.in_waiting > 0:
-                line = connection.readline().decode('utf-8', errors='ignore').strip()
+    with httpx.Client() as client:
+        connection = None
+
+        try:
+            connection = serial.Serial(
+                SERIAL_PORT,
+                BAUD_RATE,
+                timeout=1
+            )
+
+            time.sleep(2)
+
+            enviar_estado_conexao(
+                client,
+                True,
+                "Arduino conectado e monitorando."
+            )
+
+            print("Arduino conectado. Monitoramento iniciado.")
+
+            while True:
+                raw = connection.readline()
+
+                if not raw:
+                    continue
+
+                line = raw.decode(
+                    "utf-8",
+                    errors="ignore"
+                ).strip()
+
                 if not line:
                     continue
 
-                print(f"{line}")
+                print(line)
 
-                if "DIST:" not in line or "|WATER:" not in line:
+                try:
+                    dados = interpretar_mensagem(line)
+
+                except ValueError:
+                    # Ignora mensagens que não pertencem ao protocolo.
                     continue
 
                 try:
-                    dist_part, water_part = line.split("|")
-                    distance = float(dist_part.replace("DIST:", ""))
-                    water = water_part.replace("WATER:", "").strip() == "1"
-                except ValueError:
-                    continue
+                    response = client.post(
+                        f"{API_URL}/telemetry/serial",
+                        json={"message": line},
+                        timeout=3.0,
+                    )
 
-                # Water alert
+                    response.raise_for_status()
+
+                    print(
+                        "API:",
+                        response.json().get("status", "received")
+                    )
+
+                except httpx.HTTPError as exc:
+                    print(
+                        f"Falha ao enviar telemetria para a API: {exc}"
+                    )
+
+                water = dados["water_detected"]
+                distance = dados["distance_cm"]
+
+                # Alerta de água.
                 if water and not flood_alerted:
                     flood_alerted = True
-                    alert = flood_alert(water)
-                    print(alert)
+                    print(flood_alert(water))
+
                 elif not water:
                     flood_alerted = False
 
-                # Trash alert
-                if 0 < distance <= DISTANCE_LIMIT and not trash_alerted:
+                # Alerta de lixo.
+                if (
+                    distance is not None
+                    and 0 < distance <= 5.0
+                    and not trash_alerted
+                ):
                     trash_alerted = True
-                    alert = trash_alert(distance)
-                    print(alert)
-                elif distance > DISTANCE_LIMIT or distance < 0:
+                    print(trash_alert(distance))
+
+                elif distance is None or distance > 5.0:
                     trash_alerted = False
-            else:
-                time.sleep(0.01)
-                
-    except serial.SerialException as e:
-        print(f"Falha na porta serial: {e}")
-    except KeyboardInterrupt:
-        print("Monitoramento interrompido")
-        sys.exit(0)
-    finally:
-        if connection is not None and connection.is_open:
-            connection.close()
+
+        except serial.SerialException as exc:
+            enviar_estado_conexao(
+                client,
+                False,
+                f"Falha na porta serial: {exc}"
+            )
+
+            print(f"Falha na porta serial: {exc}")
+
+        except KeyboardInterrupt:
+            print("Monitoramento interrompido.")
+
+        finally:
+            if connection is not None and connection.is_open:
+                connection.close()
+
+            enviar_estado_conexao(
+                client,
+                False,
+                "Monitoramento Serial encerrado."
+            )
+
+
+if __name__ == "__main__":
+    monitor_system()

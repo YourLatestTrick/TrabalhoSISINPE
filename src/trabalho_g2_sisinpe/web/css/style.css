@@ -38,6 +38,21 @@ header p {
     color: #cbd5e1;
 }
 
+.connection-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 210px;
+}
+
+#connection-status,
+#serial-status {
+    padding: 10px 16px;
+    border-radius: 20px;
+    background: #334155;
+    text-align: center;
+}
+
 #connection-status {
     padding: 10px 16px;
 

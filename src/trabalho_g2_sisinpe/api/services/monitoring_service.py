@@ -1,3 +1,4 @@
+
 """
 Serviço central de monitoramento do SISINPE.
 """
@@ -21,15 +22,6 @@ def processar_medicao(
 ):
     """
     Processa uma leitura dos sensores.
-
-    Recebe:
-        distance_cm: distância do ultrassônico.
-        water_detected: presença de água.
-        humidity_percent: umidade, se disponível.
-        rotation_attempts: tentativas realizadas pelo Arduino.
-        rotation_success: resultado da desobstrução.
-        event_code: evento informado pelo hardware.
-
     """
 
     risco = classificar_risco(
@@ -37,17 +29,19 @@ def processar_medicao(
         water_detected=water_detected,
     )
 
-    # Salva a medição
+    # Salva a medição.
     measurement_id = salvar_medicao(
         distance_cm=distance_cm,
         water_detected=int(bool(water_detected)),
         humidity_percent=humidity_percent,
         risk_level=risco["nivel"],
+        rotation_attempts=rotation_attempts,
+        rotation_success=rotation_success,
+        event_code=event_code,
     )
 
-    # Evento de detecção de lixo
+    # Evento de detecção de lixo.
     if risco["lixo_detectado"] is True:
-
         registrar_evento(
             event_type="TRASH_DETECTED",
             description="Possível lixo detectado pelo ultrassônico.",
@@ -57,9 +51,8 @@ def processar_medicao(
             },
         )
 
-    # Evento de detecção de água
+    # Evento de detecção de água.
     if water_detected:
-
         registrar_evento(
             event_type="WATER_DETECTED",
             description="Sensor de umidade detectou água.",
@@ -71,17 +64,34 @@ def processar_medicao(
         criar_alerta(
             alert_type="WATER_DETECTED",
             severity="HIGH",
-            description=(
-                "Água detectada na galeria pluvial."
-            ),
+            description="Água detectada na galeria pluvial.",
         )
 
-    # Evento de falha na desobstrução
+    # Registra o resultado da rotação.
+    if rotation_attempts > 0:
+        registrar_evento(
+            event_type="TRASH_ROTATION_RESULT",
+            description=(
+                "Ciclo de rotação concluído com sucesso."
+                if rotation_success is True
+                else "Ciclo de rotação concluído sem remover o objeto da faixa."
+                if rotation_success is False
+                else "Ciclo de rotação executado; resultado não informado."
+            ),
+            details={
+                "rotation_attempts": rotation_attempts,
+                "rotation_success": rotation_success,
+                "distance_cm": distance_cm,
+                "measurement_id": measurement_id,
+                "event_code": event_code,
+            },
+        )
+
+    # Falha na desobstrução após três tentativas.
     if (
         rotation_attempts >= 3
         and rotation_success is False
     ):
-
         registrar_evento(
             event_type="TRASH_REMOVAL_REQUIRED",
             description=(
@@ -105,9 +115,8 @@ def processar_medicao(
             ),
         )
 
-    # Falha de leitura
+    # Falha de leitura.
     if risco["nivel"] == "INDETERMINADO":
-
         registrar_evento(
             event_type="SENSOR_ERROR",
             description=risco["descricao"],
@@ -123,7 +132,6 @@ def processar_medicao(
             description=risco["descricao"],
         )
 
-    # Retorno do processamento
     return {
         "measurement_id": measurement_id,
         "distance_cm": distance_cm,
