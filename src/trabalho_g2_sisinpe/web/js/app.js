@@ -44,8 +44,18 @@ async function carregarStatus() {
 
         atualizarTexto(
             "connection-status",
-            `API: ${data.status.toUpperCase()}`
+            `API: ${data.status.toUpperCase()} | SERIAL: SIMULAÇÃO`
         );
+
+        const serialResponse = await fetch(`${API_URL}/control/status`);
+        if (serialResponse.ok) {
+            const control = await serialResponse.json();
+            const serial = control.serial || {};
+            atualizarTexto(
+                "connection-status",
+                `API: ONLINE | SERIAL: ${serial.connected ? "CONECTADA" : serial.mode || "SIMULAÇÃO"}`
+            );
+        }
 
     } catch (error) {
 

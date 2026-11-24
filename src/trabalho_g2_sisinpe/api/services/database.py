@@ -1,6 +1,6 @@
 import sqlite3
 import json
-
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -13,18 +13,20 @@ DATA_DIR = PROJECT_ROOT / "data"
 DB_PATH = DATA_DIR / "sisinpe.db"
 
 
+@contextmanager
 def conectar():
-    """
-    Cria uma conexão com o banco SQLite.
-    """
-
+    """Abre uma conexão SQLite e garante seu fechamento."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-
     conn = sqlite3.connect(DB_PATH, timeout=10)
-
     conn.row_factory = sqlite3.Row
-
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def obter_data_atual():
@@ -37,7 +39,8 @@ def obter_data_atual():
 
 def inicializar_banco():
     """
-    Cria as tabelas do sistema caso ainda não existam.
+    Cria as tabelas do sistema caso ainda não existam
+    e atualiza o esquema do banco quando necessário.
     """
 
     with conectar() as conn:
@@ -45,15 +48,13 @@ def inicializar_banco():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS measurements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-
                 distance_cm REAL,
-
                 water_detected INTEGER,
-
                 humidity_percent REAL,
-
                 risk_level TEXT NOT NULL DEFAULT 'NORMAL',
-
+                rotation_attempts INTEGER DEFAULT 0,
+                rotation_success INTEGER,
+                event_code TEXT,
                 created_at TEXT NOT NULL
             )
         """)
@@ -61,17 +62,11 @@ def inicializar_banco():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-
                 alert_type TEXT NOT NULL,
-
                 severity TEXT NOT NULL,
-
                 description TEXT NOT NULL,
-
                 status TEXT NOT NULL DEFAULT 'ACTIVE',
-
                 created_at TEXT NOT NULL,
-
                 updated_at TEXT
             )
         """)
@@ -79,18 +74,36 @@ def inicializar_banco():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-
                 event_type TEXT NOT NULL,
-
                 description TEXT NOT NULL,
-
                 details TEXT,
-
                 created_at TEXT NOT NULL
             )
         """)
 
-        # Índices para facilitar consultas por data
+        # Migração de bancos existentes
+        colunas = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(measurements)"
+            ).fetchall()
+        }
+
+        novas_colunas = {
+            "rotation_attempts": "INTEGER DEFAULT 0",
+            "rotation_success": "INTEGER",
+            "event_code": "TEXT",
+        }
+
+        for coluna, tipo in novas_colunas.items():
+
+            if coluna not in colunas:
+
+                conn.execute(
+                    f"ALTER TABLE measurements "
+                    f"ADD COLUMN {coluna} {tipo}"
+                )
+
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_measurements_created_at
             ON measurements(created_at)
@@ -113,10 +126,14 @@ def salvar_medicao(
     distance_cm=None,
     water_detected=None,
     humidity_percent=None,
-    risk_level="NORMAL"
+    risk_level="NORMAL",
+    rotation_attempts=0,
+    rotation_success=None,
+    event_code=None,
 ):
     """
-    Salva uma medição dos sensores.
+    Salva uma medição dos sensores e os dados
+    relativos ao mecanismo de desobstrução.
     """
 
     data = obter_data_atual()
@@ -129,15 +146,25 @@ def salvar_medicao(
                 water_detected,
                 humidity_percent,
                 risk_level,
+                rotation_attempts,
+                rotation_success,
+                event_code,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             distance_cm,
-            water_detected,
+            int(bool(water_detected)),
             humidity_percent,
             risk_level,
-            data
+            rotation_attempts,
+            (
+                None
+                if rotation_success is None
+                else int(bool(rotation_success))
+            ),
+            event_code,
+            data,
         ))
 
         return cursor.lastrowid
@@ -309,81 +336,15 @@ def buscar_eventos(limite=100):
 
         return resultados
 
-def buscar_medicoes(limite=100):
-    """
-    Busca as últimas medições.
-    """
-
-    with conectar() as conn:
-
-        cursor = conn.execute("""
-            SELECT *
-            FROM measurements
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limite,))
-
-        return [dict(row) for row in cursor.fetchall()]
-
-
-def buscar_alertas(limite=100):
-    """
-    Busca os alertas mais recentes.
-    """
-
-    with conectar() as conn:
-
-        cursor = conn.execute("""
-            SELECT *
-            FROM alerts
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limite,))
-
-        return [dict(row) for row in cursor.fetchall()]
-
-
-def buscar_eventos(limite=100):
-    """
-    Busca os eventos mais recentes.
-    """
-
-    with conectar() as conn:
-
-        cursor = conn.execute("""
-            SELECT *
-            FROM events
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limite,))
-
-        resultados = [dict(row) for row in cursor.fetchall()]
-
-        for evento in resultados:
-
-            if evento["details"]:
-                evento["details"] = json.loads(
-                    evento["details"]
-                )
-
-        return resultados
 
 
 def resolver_alerta(alerta_id):
-    """
-    Marca um alerta como resolvido.
-    """
-
+    """Marca um alerta ativo como resolvido."""
     data = obter_data_atual()
-
     with conectar() as conn:
-
-        cursor = conn.execute("""
-            UPDATE alerts
-            SET status = 'RESOLVED',
-                updated_at = ?
-            WHERE id = ?
-              AND status = 'ACTIVE'
-        """, (data, alerta_id))
-
+        cursor = conn.execute(
+            "UPDATE alerts SET status = 'RESOLVED', updated_at = ? "
+            "WHERE id = ? AND status = 'ACTIVE'",
+            (data, alerta_id),
+        )
         return cursor.rowcount > 0

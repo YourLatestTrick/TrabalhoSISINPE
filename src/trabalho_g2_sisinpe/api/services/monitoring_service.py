@@ -38,11 +38,15 @@ def processar_medicao(
     )
 
     # Salva a medição
+    # Salva a medição
     measurement_id = salvar_medicao(
         distance_cm=distance_cm,
-        water_detected=int(bool(water_detected)),
+        water_detected=water_detected,
         humidity_percent=humidity_percent,
         risk_level=risco["nivel"],
+        rotation_attempts=rotation_attempts,
+        rotation_success=rotation_success,
+        event_code=event_code,
     )
 
     # Evento de detecção de lixo

@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.165.0",
+    "httpx>=0.28.1",
     "pyserial>=3.5",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
     "uvicorn>=0.54.0",
 ]
 
