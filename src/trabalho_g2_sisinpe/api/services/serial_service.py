@@ -1,136 +1,139 @@
-"""Comunicação serial com Arduino e interpretação do protocolo JSON do SISINPE."""
-from __future__ import annotations
 
-import json
+"""Serviço de comunicação Serial com o Arduino."""
+
 import os
-import threading
-import time
-from typing import Any
+from serial.tools import list_ports
 
-from .monitoring_service import processar_medicao
+SERIAL_PORT = os.getenv("SISINPE_SERIAL_PORT", "/dev/ttyACM0")
+BAUD_RATE = int(os.getenv("SISINPE_BAUD_RATE", "9600"))
 
-DEFAULT_BAUD_RATE = 9600
-
-_status: dict[str, Any] = {
+_connection_state = {
     "connected": False,
     "mode": "SIMULATION",
-    "port": None,
-    "last_message": None,
-    "last_error": None,
-    "last_received_at": None,
+    "port": SERIAL_PORT,
+    "message": "Monitor Serial ainda não iniciou."
 }
-_status_lock = threading.Lock()
-_stop_event = threading.Event()
-_worker: threading.Thread | None = None
 
 
-def interpretar_mensagem(mensagem: str) -> dict[str, Any]:
-    """Interpreta uma linha JSON do Arduino. Também aceita protocolo legado DIST/WATER."""
-    line = mensagem.strip()
-    if not line:
-        raise ValueError("Mensagem serial vazia.")
-    if line.startswith("{"):
-        data = json.loads(line)
-        if not isinstance(data, dict):
-            raise ValueError("A mensagem JSON precisa ser um objeto.")
-        distance = data.get("distance_cm")
-        water = data.get("water_detected", False)
-        humidity = data.get("humidity_percent")
-        attempts = data.get("rotation_attempts", 0)
-        success = data.get("rotation_success")
-        event_code = data.get("event_code")
-    elif line.startswith("DIST:") and "|WATER:" in line:
-        distance_part, water_part = line.split("|", 1)
-        raw_distance = distance_part.removeprefix("DIST:").strip()
-        distance = float(raw_distance)
-        water = water_part.removeprefix("WATER:").strip() == "1"
-        humidity, attempts, success, event_code = None, 0, None, None
-    else:
-        raise ValueError("Formato serial desconhecido.")
+def atualizar_estado_conexao(connected, message=None, port=None):
+    global _connection_state
 
-    if distance is not None:
-        distance = float(distance)
-    if humidity is not None:
-        humidity = float(humidity)
-    attempts = int(attempts)
-    if attempts < 0 or attempts > 3:
-        raise ValueError("rotation_attempts deve estar entre 0 e 3.")
-    if success is not None and not isinstance(success, bool):
-        raise ValueError("rotation_success deve ser booleano ou null.")
-    if not isinstance(water, bool):
-        raise ValueError("water_detected deve ser booleano.")
-    return {
-        "distance_cm": distance,
-        "water_detected": water,
-        "humidity_percent": humidity,
-        "rotation_attempts": attempts,
-        "rotation_success": success,
-        "event_code": event_code,
+    _connection_state = {
+        "connected": bool(connected),
+        "mode": "HARDWARE" if connected else "SIMULATION",
+        "port": port or SERIAL_PORT,
+        "baud_rate": BAUD_RATE,
+        "message": message or (
+            "Arduino conectado."
+            if connected
+            else "Arduino desconectado."
+        ),
     }
 
-
-def processar_mensagem_serial(mensagem: str) -> dict[str, Any]:
-    dados = interpretar_mensagem(mensagem)
-    return processar_medicao(**dados)
+    return dict(_connection_state)
 
 
-def verificar_disponibilidade() -> dict[str, Any]:
-    with _status_lock:
-        return dict(_status)
+def verificar_disponibilidade():
+    """Consulta o estado da conexão e as portas disponíveis."""
+
+    available_ports = [
+        item.device for item in list_ports.comports()
+    ]
+
+    state = dict(_connection_state)
+
+    state["available_ports"] = available_ports
+    state["port_detected"] = state["port"] in available_ports
+
+    if state["connected"] and not state["port_detected"]:
+        return atualizar_estado_conexao(
+            False,
+            "A porta serial não está mais disponível."
+        ) | {
+            "available_ports": available_ports,
+            "port_detected": False
+        }
+
+    return state
 
 
-def _serial_worker(port: str, baud_rate: int) -> None:
+def interpretar_mensagem(mensagem):
+    """
+    Interpreta o protocolo:
+    DIST:x|WATER:0/1|ATTEMPTS:n|ROTATION:resultado
+
+    Também aceita o protocolo antigo, sem os campos adicionais.
+    """
+
+    if not isinstance(mensagem, str):
+        raise ValueError("A mensagem Serial deve ser texto.")
+
+    campos = {}
+
+    for parte in mensagem.strip().split("|"):
+        if ":" not in parte:
+            continue
+
+        chave, valor = parte.split(":", 1)
+
+        campos[chave.strip().upper()] = valor.strip()
+
+    if "DIST" not in campos or "WATER" not in campos:
+        raise ValueError(
+            "Mensagem fora do protocolo: esperado DIST e WATER."
+        )
+
     try:
-        import serial  # pyserial é necessário somente no modo hardware
-        with serial.Serial(port, baud_rate, timeout=1) as connection:
-            time.sleep(2)  # aguarda reset do Arduino após abrir a serial
-            with _status_lock:
-                _status.update(connected=True, mode="HARDWARE", port=port, last_error=None)
-            while not _stop_event.is_set():
-                raw = connection.readline()
-                if not raw:
-                    continue
-                message = raw.decode("utf-8", errors="replace").strip()
-                if not message:
-                    continue
-                try:
-                    result = processar_mensagem_serial(message)
-                    with _status_lock:
-                        _status.update(last_message=message, last_received_at=time.time(), last_error=None)
-                    print(f"[SERIAL] Medição processada: {result}")
-                except (ValueError, json.JSONDecodeError) as exc:
-                    with _status_lock:
-                        _status.update(last_message=message, last_error=f"Mensagem inválida: {exc}")
-                    print(f"[SERIAL] {exc}: {message}")
-    except (ImportError, OSError, Exception) as exc:
-        with _status_lock:
-            _status.update(connected=False, mode="ERROR", port=port, last_error=str(exc))
-        print(f"[SERIAL] Não foi possível conectar em {port}: {exc}")
-    finally:
-        with _status_lock:
-            _status.update(connected=False)
+        distance = float(campos["DIST"])
+        water_value = int(campos["WATER"])
+    except ValueError as exc:
+        raise ValueError(
+            "DIST ou WATER contém valor inválido."
+        ) from exc
 
+    if water_value not in (0, 1):
+        raise ValueError("WATER deve ser 0 ou 1.")
 
-def iniciar_monitor_serial(port: str | None = None, baud_rate: int = DEFAULT_BAUD_RATE) -> bool:
-    """Inicia leitor serial em thread quando SISINPE_SERIAL_PORT está configurada."""
-    global _worker
-    port = port or os.getenv("SISINPE_SERIAL_PORT")
-    if not port:
-        with _status_lock:
-            _status.update(connected=False, mode="SIMULATION", port=None, last_error=None)
-        print("[SERIAL] Porta não configurada. API em modo de simulação.")
-        return False
-    if _worker and _worker.is_alive():
-        return True
-    _stop_event.clear()
-    _worker = threading.Thread(target=_serial_worker, args=(port, baud_rate), daemon=True)
-    _worker.start()
-    return True
+    attempts_raw = campos.get("ATTEMPTS", "0")
 
+    try:
+        attempts = int(attempts_raw)
+    except ValueError as exc:
+        raise ValueError(
+            "ATTEMPTS deve ser um número inteiro."
+        ) from exc
 
-def parar_monitor_serial() -> None:
-    _stop_event.set()
-    if _worker and _worker.is_alive():
-        _worker.join(timeout=2)
-    with _status_lock:
-        _status.update(connected=False)
+    if not 0 <= attempts <= 3:
+        raise ValueError(
+            "ATTEMPTS deve estar entre 0 e 3."
+        )
+
+    rotation_raw = campos.get("ROTATION", "NONE").upper()
+
+    rotation_map = {
+        "SUCCESS": True,
+        "FAILED": False,
+        "NONE": None,
+        "NA": None,
+    }
+
+    if rotation_raw not in rotation_map:
+        raise ValueError(
+            "ROTATION deve ser SUCCESS, FAILED ou NONE."
+        )
+
+    rotation_success = rotation_map[rotation_raw]
+
+    return {
+        "distance_cm": None if distance < 0 else distance,
+        "water_detected": bool(water_value),
+        "rotation_attempts": attempts,
+        "rotation_success": rotation_success,
+        "event_code": (
+            "TRASH_REMOVAL_REQUIRED"
+            if attempts == 3 and rotation_success is False
+            else None
+        ),
+        "raw_message": mensagem.strip(),
+        "parsed": True,
+    }

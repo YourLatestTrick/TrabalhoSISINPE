@@ -1,50 +1,50 @@
-import sqlite3
+
 import json
-from contextlib import contextmanager
-from pathlib import Path
+import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
-
-# Caminho do banco de dados
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
-
 DATA_DIR = PROJECT_ROOT / "data"
-
 DB_PATH = DATA_DIR / "sisinpe.db"
 
 
-@contextmanager
 def conectar():
-    """Abre uma conexão SQLite e garante seu fechamento."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+
+    return conn
 
 
 def obter_data_atual():
-    """
-    Retorna a data e hora atual em UTC.
-    """
-
     return datetime.now(timezone.utc).isoformat()
 
 
+def _adicionar_coluna_se_ausente(
+    conn,
+    tabela,
+    coluna,
+    definicao
+):
+    colunas = {
+        row[1]
+        for row in conn.execute(
+            f"PRAGMA table_info({tabela})"
+        )
+    }
+
+    if coluna not in colunas:
+        conn.execute(
+            f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}"
+        )
+
+
 def inicializar_banco():
-    """
-    Cria as tabelas do sistema caso ainda não existam
-    e atualiza o esquema do banco quando necessário.
-    """
+    """Cria tabelas e migra bancos existentes sem apagar medições."""
 
     with conectar() as conn:
-
         conn.execute("""
             CREATE TABLE IF NOT EXISTS measurements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,12 +52,34 @@ def inicializar_banco():
                 water_detected INTEGER,
                 humidity_percent REAL,
                 risk_level TEXT NOT NULL DEFAULT 'NORMAL',
-                rotation_attempts INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                rotation_attempts INTEGER NOT NULL DEFAULT 0,
                 rotation_success INTEGER,
-                event_code TEXT,
-                created_at TEXT NOT NULL
+                event_code TEXT
             )
         """)
+
+        # Migração não destrutiva.
+        _adicionar_coluna_se_ausente(
+            conn,
+            "measurements",
+            "rotation_attempts",
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+
+        _adicionar_coluna_se_ausente(
+            conn,
+            "measurements",
+            "rotation_success",
+            "INTEGER"
+        )
+
+        _adicionar_coluna_se_ausente(
+            conn,
+            "measurements",
+            "event_code",
+            "TEXT"
+        )
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
@@ -80,29 +102,6 @@ def inicializar_banco():
                 created_at TEXT NOT NULL
             )
         """)
-
-        # Migração de bancos existentes
-        colunas = {
-            row["name"]
-            for row in conn.execute(
-                "PRAGMA table_info(measurements)"
-            ).fetchall()
-        }
-
-        novas_colunas = {
-            "rotation_attempts": "INTEGER DEFAULT 0",
-            "rotation_success": "INTEGER",
-            "event_code": "TEXT",
-        }
-
-        for coluna, tipo in novas_colunas.items():
-
-            if coluna not in colunas:
-
-                conn.execute(
-                    f"ALTER TABLE measurements "
-                    f"ADD COLUMN {coluna} {tipo}"
-                )
 
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_measurements_created_at
@@ -129,77 +128,46 @@ def salvar_medicao(
     risk_level="NORMAL",
     rotation_attempts=0,
     rotation_success=None,
-    event_code=None,
+    event_code=None
 ):
-    """
-    Salva uma medição dos sensores e os dados
-    relativos ao mecanismo de desobstrução.
-    """
-
-    data = obter_data_atual()
-
     with conectar() as conn:
-
         cursor = conn.execute("""
             INSERT INTO measurements (
                 distance_cm,
                 water_detected,
                 humidity_percent,
                 risk_level,
+                created_at,
                 rotation_attempts,
                 rotation_success,
-                event_code,
-                created_at
+                event_code
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             distance_cm,
-            int(bool(water_detected)),
+            water_detected,
             humidity_percent,
             risk_level,
+            obter_data_atual(),
             rotation_attempts,
-            (
-                None
-                if rotation_success is None
-                else int(bool(rotation_success))
-            ),
-            event_code,
-            data,
+            None if rotation_success is None else int(rotation_success),
+            event_code
         ))
 
         return cursor.lastrowid
 
 
-def criar_alerta(
-    alert_type,
-    severity,
-    description
-):
-    """
-    Cria um alerta.
-
-    Evita duplicar alertas do mesmo tipo
-    que ainda estejam ativos.
-    """
-
-    data = obter_data_atual()
-
+def criar_alerta(alert_type, severity, description):
     with conectar() as conn:
-
-        cursor = conn.execute("""
-            SELECT id
-            FROM alerts
+        existing = conn.execute("""
+            SELECT id FROM alerts
             WHERE alert_type = ?
-              AND status = 'ACTIVE'
-            ORDER BY id DESC
-            LIMIT 1
-        """, (alert_type,))
+            AND status = 'ACTIVE'
+            ORDER BY id DESC LIMIT 1
+        """, (alert_type,)).fetchone()
 
-        alerta_existente = cursor.fetchone()
-
-        if alerta_existente:
-
-            return alerta_existente["id"]
+        if existing:
+            return existing["id"]
 
         cursor = conn.execute("""
             INSERT INTO alerts (
@@ -214,26 +182,13 @@ def criar_alerta(
             alert_type,
             severity,
             description,
-            data,
+            obter_data_atual()
         ))
 
         return cursor.lastrowid
 
 
-def registrar_evento(
-    event_type,
-    description,
-    details=None
-):
-    """
-    Registra um evento do sistema.
-
-    Details pode receber um dicionário com
-    informações adicionais.
-    """
-
-    data = obter_data_atual()
-
+def registrar_evento(event_type, description, details=None):
     details_json = (
         json.dumps(details, ensure_ascii=False)
         if details is not None
@@ -241,7 +196,6 @@ def registrar_evento(
     )
 
     with conectar() as conn:
-
         cursor = conn.execute("""
             INSERT INTO events (
                 event_type,
@@ -254,97 +208,82 @@ def registrar_evento(
             event_type,
             description,
             details_json,
-            data
+            obter_data_atual()
         ))
 
         return cursor.lastrowid
 
 
-def buscar_ultima_medicao():
-    """
-    Retorna a medição mais recente.
-    """
-
+def _buscar_lista(tabela, limite=100):
     with conectar() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM {tabela} ORDER BY id DESC LIMIT ?",
+            (limite,)
+        ).fetchall()
 
-        cursor = conn.execute("""
-            SELECT *
-            FROM measurements
-            ORDER BY id DESC
-            LIMIT 1
-        """)
+    resultados = [dict(row) for row in rows]
 
-        resultado = cursor.fetchone()
+    if tabela == "events":
+        for item in resultados:
+            if item.get("details"):
+                item["details"] = json.loads(item["details"])
 
-        return dict(resultado) if resultado else None
+    return resultados
+
+
+def buscar_ultima_medicao():
+    with conectar() as conn:
+        row = conn.execute("""
+            SELECT * FROM measurements
+            ORDER BY id DESC LIMIT 1
+        """).fetchone()
+
+    if not row:
+        return None
+
+    result = dict(row)
+
+    if result.get("rotation_success") is not None:
+        result["rotation_success"] = bool(result["rotation_success"])
+
+    if result.get("water_detected") is not None:
+        result["water_detected"] = bool(result["water_detected"])
+
+    return result
 
 
 def buscar_medicoes(limite=100):
-    """
-    Retorna as últimas medições realizadas.
-    """
+    items = _buscar_lista("measurements", limite)
 
-    with conectar() as conn:
+    for item in items:
+        if item.get("rotation_success") is not None:
+            item["rotation_success"] = bool(item["rotation_success"])
 
-        cursor = conn.execute("""
-            SELECT *
-            FROM measurements
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limite,))
+        if item.get("water_detected") is not None:
+            item["water_detected"] = bool(item["water_detected"])
 
-        return [dict(row) for row in cursor.fetchall()]
+    return items
 
 
 def buscar_alertas(limite=100):
-    """
-    Retorna os alertas mais recentes.
-    """
-
-    with conectar() as conn:
-
-        cursor = conn.execute("""
-            SELECT *
-            FROM alerts
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limite,))
-
-        return [dict(row) for row in cursor.fetchall()]
+    return _buscar_lista("alerts", limite)
 
 
 def buscar_eventos(limite=100):
-    """
-    Retorna os eventos mais recentes.
-    """
-
-    with conectar() as conn:
-
-        cursor = conn.execute("""
-            SELECT *
-            FROM events
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limite,))
-
-        resultados = [dict(row) for row in cursor.fetchall()]
-
-        for evento in resultados:
-
-            if evento["details"]:
-                evento["details"] = json.loads(evento["details"])
-
-        return resultados
-
+    return _buscar_lista("events", limite)
 
 
 def resolver_alerta(alerta_id):
-    """Marca um alerta ativo como resolvido."""
-    data = obter_data_atual()
     with conectar() as conn:
-        cursor = conn.execute(
-            "UPDATE alerts SET status = 'RESOLVED', updated_at = ? "
-            "WHERE id = ? AND status = 'ACTIVE'",
-            (data, alerta_id),
-        )
+        cursor = conn.execute("""
+            UPDATE alerts
+            SET status = 'RESOLVED',
+                updated_at = ?
+            WHERE id = ?
+            AND status = 'ACTIVE'
+        """, (
+            obter_data_atual(),
+            alerta_id
+        ))
+
         return cursor.rowcount > 0

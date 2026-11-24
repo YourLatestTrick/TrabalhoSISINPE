@@ -1,14 +1,10 @@
-# Python
+# Python-generated files
 __pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.coverage
-htmlcov/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
 
-# Environment
-.venv/
-.env
-
-# Local database and reports
-data/
+# Virtual environments
+.venv

@@ -1,64 +1,52 @@
+
 const API_URL = "";
 
 let apiOnline = false;
 
-
 function formatarData(data) {
-
-    if (!data) {
-        return "--";
-    }
+    if (!data) return "--";
 
     const date = new Date(data);
 
-    return date.toLocaleString("pt-BR");
+    return Number.isNaN(date.getTime())
+        ? data
+        : date.toLocaleString("pt-BR");
 }
 
-
 function atualizarTexto(id, texto) {
-
     const elemento = document.getElementById(id);
 
     if (elemento) {
         elemento.textContent = texto;
     }
-
 }
 
+async function requisicaoJson(url) {
+    const response = await fetch(url, {
+        cache: "no-store"
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
+}
 
 async function carregarStatus() {
-
     try {
-
-        const response = await fetch(
+        const data = await requisicaoJson(
             `${API_URL}/health`
         );
-
-        if (!response.ok) {
-            throw new Error("API indisponível");
-        }
-
-        const data = await response.json();
 
         apiOnline = true;
 
         atualizarTexto(
             "connection-status",
-            `API: ${data.status.toUpperCase()} | SERIAL: SIMULAÇÃO`
+            `API: ${data.status.toUpperCase()}`
         );
 
-        const serialResponse = await fetch(`${API_URL}/control/status`);
-        if (serialResponse.ok) {
-            const control = await serialResponse.json();
-            const serial = control.serial || {};
-            atualizarTexto(
-                "connection-status",
-                `API: ONLINE | SERIAL: ${serial.connected ? "CONECTADA" : serial.mode || "SIMULAÇÃO"}`
-            );
-        }
-
     } catch (error) {
-
         apiOnline = false;
 
         atualizarTexto(
@@ -66,46 +54,68 @@ async function carregarStatus() {
             "API: OFFLINE"
         );
 
+        atualizarTexto(
+            "serial-status",
+            "Arduino: indisponível (API offline)"
+        );
     }
-
 }
 
-
-async function carregarTelemetria() {
-
+async function carregarStatusSerial() {
     try {
-
-        const response = await fetch(
-            `${API_URL}/telemetry/latest`
+        const data = await requisicaoJson(
+            `${API_URL}/serial/status`
         );
 
-        if (!response.ok) {
-            throw new Error("Erro na telemetria");
-        }
+        const status = data.connected
+            ? "CONECTADO"
+            : "DESCONECTADO";
 
-        const resultado = await response.json();
+        atualizarTexto(
+            "serial-status",
+            `Arduino: ${status} (${data.port || "porta não definida"})`
+        );
+
+    } catch (error) {
+        atualizarTexto(
+            "serial-status",
+            "Arduino: status indisponível"
+        );
+    }
+}
+
+async function carregarTelemetria() {
+    try {
+        const resultado = await requisicaoJson(
+            `${API_URL}/telemetry/latest`
+        );
 
         const medicao = resultado.data;
 
         if (!medicao) {
-
-            atualizarTexto("distance", "-- cm");
-            atualizarTexto("water", "--");
-            atualizarTexto("risk", "--");
-            atualizarTexto("attempts", "--");
-            atualizarTexto("mechanism", "--");
+            [
+                "distance",
+                "water",
+                "risk",
+                "attempts",
+                "mechanism"
+            ].forEach(id => atualizarTexto(id, "--"));
 
             atualizarTexto(
                 "measurement-time",
                 "Nenhuma medição registrada."
             );
 
+            atualizarTexto("measurement-details", "--");
+
             return;
         }
 
         atualizarTexto(
             "distance",
-            `${medicao.distance_cm ?? "--"} cm`
+            medicao.distance_cm == null
+                ? "Sem leitura"
+                : `${Number(medicao.distance_cm).toFixed(2)} cm`
         );
 
         atualizarTexto(
@@ -117,22 +127,22 @@ async function carregarTelemetria() {
 
         atualizarTexto(
             "risk",
-            medicao.risk_level ?? "--"
+            medicao.risk_level || "--"
         );
 
         atualizarTexto(
             "attempts",
-            medicao.rotation_attempts ?? "--"
+            `${medicao.rotation_attempts ?? 0} / 3`
         );
 
-        atualizarTexto(
-            "mechanism",
+        const mechanism =
             medicao.rotation_success === true
-                ? "Desobstruído"
+                ? "Sucesso (objeto fora da faixa)"
                 : medicao.rotation_success === false
-                    ? "Falha"
-                    : "Aguardando"
-        );
+                    ? "Falha após tentativas"
+                    : "Não acionado nesta leitura";
+
+        atualizarTexto("mechanism", mechanism);
 
         atualizarTexto(
             "measurement-time",
@@ -141,247 +151,203 @@ async function carregarTelemetria() {
 
         atualizarTexto(
             "measurement-details",
-            `ID da medição: ${medicao.id}`
+            `Medição #${medicao.id} | Evento: ${medicao.event_code || "nenhum"}`
         );
 
     } catch (error) {
-
         console.error(
             "Erro ao carregar telemetria:",
             error
         );
-
     }
-
 }
 
+function preencherLista(
+    containerId,
+    items,
+    formatter,
+    emptyText
+) {
+    const container = document.getElementById(containerId);
 
-async function carregarAlertas() {
+    if (!container) return;
 
-    try {
+    container.replaceChildren();
 
-        const response = await fetch(
-            `${API_URL}/alerts`
-        );
-
-        if (!response.ok) {
-            throw new Error("Erro ao carregar alertas");
-        }
-
-        const resultado = await response.json();
-
-        const container = document.getElementById(
-            "alerts"
-        );
-
-        container.innerHTML = "";
-
-        if (!resultado.data || resultado.data.length === 0) {
-
-            container.textContent = "Nenhum alerta registrado.";
-
-            return;
-
-        }
-
-        resultado.data.forEach(alerta => {
-
-            const item = document.createElement("div");
-
-            item.className = "item";
-
-            if (alerta.severity === "CRITICAL") {
-                item.classList.add("critical");
-            }
-
-            if (alerta.severity === "WARNING") {
-                item.classList.add("warning");
-            }
-
-            const texto = document.createElement("p");
-
-            texto.textContent = (
-                `${alerta.alert_type}: ${alerta.description}`
-            );
-
-            item.appendChild(texto);
-
-            const status = document.createElement("small");
-
-            status.textContent = `Status: ${alerta.status}`;
-
-            item.appendChild(status);
-
-            container.appendChild(item);
-
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Erro ao carregar alertas:",
-            error
-        );
-
-    }
-
-}
-
-
-async function carregarEventos() {
-
-    try {
-
-        const response = await fetch(
-            `${API_URL}/events`
-        );
-
-        if (!response.ok) {
-            throw new Error("Erro ao carregar eventos");
-        }
-
-        const resultado = await response.json();
-
-        const container = document.getElementById(
-            "events"
-        );
-
-        container.innerHTML = "";
-
-        if (!resultado.data || resultado.data.length === 0) {
-
-            container.textContent = "Nenhum evento registrado.";
-
-            return;
-
-        }
-
-        resultado.data.forEach(evento => {
-
-            const item = document.createElement("div");
-
-            item.className = "item";
-
-            item.textContent = (
-                `${evento.event_type}: ${evento.description}`
-            );
-
-            container.appendChild(item);
-
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Erro ao carregar eventos:",
-            error
-        );
-
-    }
-
-}
-
-
-async function atualizarDashboard() {
-
-    await carregarStatus();
-
-    if (!apiOnline) {
+    if (!items || items.length === 0) {
+        container.textContent = emptyText;
         return;
     }
 
-    await Promise.all([
-        carregarTelemetria(),
-        carregarAlertas(),
-        carregarEventos(),
-    ]);
+    items.forEach(itemData => {
+        const item = document.createElement("div");
 
+        item.className = "item";
+
+        formatter(item, itemData);
+
+        container.appendChild(item);
+    });
 }
 
-
-document.getElementById(
-    "simulation-form"
-).addEventListener("submit", async function(event) {
-
-    event.preventDefault();
-
-    const form = event.target;
-
-    const payload = {
-
-        distance_cm: Number(
-            form.elements["distance_cm"].value
-        ),
-
-        water_detected:
-            form.elements["water_detected"].value === "true",
-
-        rotation_attempts: Number(
-            form.elements["rotation_attempts"].value
-        ),
-
-        rotation_success:
-            form.elements["rotation_success"].value === ""
-                ? null
-                : form.elements["rotation_success"].value === "true",
-
-    };
-
-    const resultElement = document.getElementById(
-        "simulation-result"
-    );
-
-    resultElement.textContent = "Enviando...";
-
+async function carregarAlertas() {
     try {
-
-        const response = await fetch(
-            `${API_URL}/telemetry/simulate`,
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json",
-                },
-
-                body: JSON.stringify(payload),
-            }
+        const resultado = await requisicaoJson(
+            `${API_URL}/alerts`
         );
 
-        const resultado = await response.json();
+        preencherLista(
+            "alerts",
+            resultado.data,
+            (item, alerta) => {
+                if (alerta.severity === "CRITICAL") {
+                    item.classList.add("critical");
+                } else if (
+                    alerta.severity === "WARNING" ||
+                    alerta.severity === "HIGH"
+                ) {
+                    item.classList.add("warning");
+                }
 
-        if (!response.ok) {
+                const title = document.createElement("strong");
 
-            throw new Error(
-                resultado.detail || "Erro na simulação"
-            );
+                title.textContent =
+                    `${alerta.alert_type} — ${alerta.severity}`;
 
-        }
+                const description = document.createElement("p");
 
-        resultElement.textContent = (
-            resultado.message
+                description.textContent = alerta.description;
+
+                const status = document.createElement("small");
+
+                status.textContent =
+                    `Status: ${alerta.status} | ${formatarData(alerta.created_at)}`;
+
+                item.append(title, description, status);
+            },
+            "Nenhum alerta registrado."
         );
-
-        await atualizarDashboard();
 
     } catch (error) {
+        console.error("Erro ao carregar alertas:", error);
+    }
+}
 
-        resultElement.textContent = (
-            `Erro: ${error.message}`
+async function carregarEventos() {
+    try {
+        const resultado = await requisicaoJson(
+            `${API_URL}/events`
         );
 
-        console.error(error);
+        preencherLista(
+            "events",
+            resultado.data,
+            (item, evento) => {
+                const title = document.createElement("strong");
 
+                title.textContent = evento.event_type;
+
+                const description = document.createElement("p");
+
+                description.textContent = evento.description;
+
+                const date = document.createElement("small");
+
+                date.textContent = formatarData(evento.created_at);
+
+                item.append(title, description, date);
+            },
+            "Nenhum evento registrado."
+        );
+
+    } catch (error) {
+        console.error("Erro ao carregar eventos:", error);
     }
+}
 
-});
+async function atualizarDashboard() {
+    await carregarStatus();
 
+    if (!apiOnline) return;
+
+    await Promise.all([
+        carregarStatusSerial(),
+        carregarTelemetria(),
+        carregarAlertas(),
+        carregarEventos()
+    ]);
+}
+
+// Simulação manual.
+const simulationForm = document.getElementById("simulation-form");
+
+if (simulationForm) {
+    simulationForm.addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const form = event.currentTarget;
+
+        const payload = {
+            distance_cm: Number(form.elements.distance_cm.value),
+
+            water_detected:
+                form.elements.water_detected.value === "true",
+
+            rotation_attempts:
+                Number(form.elements.rotation_attempts.value),
+
+            rotation_success:
+                form.elements.rotation_success.value === ""
+                    ? null
+                    : form.elements.rotation_success.value === "true",
+
+            event_code:
+                Number(form.elements.rotation_attempts.value) === 3 &&
+                form.elements.rotation_success.value === "false"
+                    ? "TRASH_REMOVAL_REQUIRED"
+                    : null
+        };
+
+        const resultElement = document.getElementById(
+            "simulation-result"
+        );
+
+        resultElement.textContent = "Enviando...";
+
+        try {
+            const response = await fetch(
+                `${API_URL}/telemetry/simulate`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify(payload)
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "Erro na simulação"
+                );
+            }
+
+            resultElement.textContent =
+                "Medição simulada e registrada com sucesso.";
+
+            await atualizarDashboard();
+
+        } catch (error) {
+            resultElement.textContent =
+                `Erro: ${error.message}`;
+        }
+    });
+}
 
 atualizarDashboard();
 
-
-// Atualização automática a cada 5 segundos
-setInterval(
-    atualizarDashboard,
-    5000
-);
+setInterval(atualizarDashboard, 5000);

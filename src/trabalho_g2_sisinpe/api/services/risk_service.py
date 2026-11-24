@@ -3,7 +3,7 @@ Serviço de classificação das condições do SISINPE.
 """
 
 DISTANCIA_MAXIMA_PERCEPCAO_CM = 30.0
-DISTANCIA_DETECCAO_LIXO_CM = 20.0
+DISTANCIA_DETECCAO_LIXO_CM = 5.0
 
 MAX_TENTATIVAS_DESOBSTRUCA = 3
 
@@ -13,8 +13,8 @@ def classificar_risco(distance_cm=None, water_detected=False):
     Classifica as condições detectadas pelos sensores.
 
     Ultrassônico:
-        <= 20 cm: possível lixo
-        > 20 cm: lixo não identificado
+        <= 5 cm: possível lixo
+        > 5 cm: lixo não identificado
         > 30 cm: fora da faixa de percepção
 
     Sensor de umidade:
