@@ -14,6 +14,11 @@ from .routers import control
 
 from .services.database import inicializar_banco
 
+from trabalho_g2_sisinpe.monitoring.monitor import (
+    iniciar_monitor,
+    parar_monitor,
+)
+
 
 # Caminho correto da pasta web
 WEB_DIR = (
@@ -26,12 +31,15 @@ WEB_DIR = (
 async def lifespan(app: FastAPI):
 
     inicializar_banco()
+    iniciar_monitor()
 
     print("SISINPE API iniciada.")
 
-    yield
-
-    print("SISINPE API encerrada.")
+    try:
+        yield
+    finally:
+        parar_monitor()
+        print("SISINPE API encerrada.")
 
 
 app = FastAPI(

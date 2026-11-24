@@ -1,4 +1,3 @@
-
 #include <Servo.h>
 
 const int ECHO_PIN   = 13;
@@ -71,7 +70,7 @@ bool run_servo_cycle(int max_attempts) {
   // Nova leitura depois das tentativas.
   float distance_after_rotation = read_distance();
 
-  rotation_success = (distance_after_rotation > DISTANCE_LIMIT);
+  rotation_success = (distance_after_rotation > 0 && distance_after_rotation > DISTANCE_LIMIT);
 
   return rotation_success;
 }

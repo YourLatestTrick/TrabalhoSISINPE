@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from ..services.risk_service import (
+    DISTANCIA_DETECCAO_LIXO_CM,
     MAX_TENTATIVAS_DESOBSTRUCA,
 )
 
@@ -21,7 +22,7 @@ def obter_status_controle():
         "max_rotation_attempts": (
             MAX_TENTATIVAS_DESOBSTRUCA
         ),
-        "trash_detection_distance_cm": 20.0,
+        "trash_detection_distance_cm": DISTANCIA_DETECCAO_LIXO_CM,
         "ultrasonic_perception_range_cm": 30.0,
         "message": (
             "O controle físico do mecanismo "

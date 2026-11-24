@@ -1,4 +1,3 @@
-
 import os
 import time
 
@@ -20,6 +19,11 @@ SERIAL_PORT = os.getenv(
     "SISINPE_SERIAL_PORT",
     SERIAL_PORT
 )
+
+import threading
+
+parar_monitor = threading.Event()
+_thread_monitor = None
 
 
 def flood_alert(water):
@@ -83,7 +87,7 @@ def monitor_system():
 
             print("Arduino conectado. Monitoramento iniciado.")
 
-            while True:
+            while not parar_monitor.is_set():
                 raw = connection.readline()
 
                 if not raw:
@@ -169,6 +173,24 @@ def monitor_system():
                 False,
                 "Monitoramento Serial encerrado."
             )
+
+def iniciar_monitor():
+    global _thread_monitor
+    if _thread_monitor is not None and _thread_monitor.is_alive():
+        return _thread_monitor
+
+    parar_monitor.clear()
+    _thread_monitor = threading.Thread(
+        target=monitor_system,
+        name="sisinpe-monitor",
+        daemon=True,
+    )
+    _thread_monitor.start()
+    return _thread_monitor
+
+
+def parar_monitor():
+    parar_monitor.set()
 
 
 if __name__ == "__main__":
