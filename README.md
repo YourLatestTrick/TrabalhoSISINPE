@@ -5,7 +5,7 @@ Sistema de monitoramento que utiliza o arduino integrado via USB a uma raspberry
 ## Visão Geral
 - **Arduino:** lê distância usando o sensor ultrassônico e presença de água usando o sensor de humidade do solo (higrômetro). Quando o sensor ultrassônico detecta lixo na faixa de distância menor que **5.0 cm**, o arduino executa o ciclo do servomotor **3 vezes**. Quando o higrômetro detecta água, o arduino aciona o **LED RGB na cor vermelha** e faz o **buzzer** apitar. Além disso, o arduino envia as leituras pela porta serial.
 
-- **Monitoramento (Python):** lê a porta serial, valida/converte os dados e gera os eventos **flood_alert** e **trash_needs_pickup** para serem usados na api.
+- **Monitoramento (Python):** lê a porta serial, chama função para validar/converter os dados e os envia para a api. Todo esse processo é executado em uma thread separada.
 
 ## Componentes físicos
 - Raspberry Pi
@@ -17,7 +17,6 @@ Sistema de monitoramento que utiliza o arduino integrado via USB a uma raspberry
 - Buzzer
 
 ## Estrutura do Projeto
-
 ```text
 trabalho_g2_sisinpe/
 ├── bin/
@@ -68,9 +67,9 @@ trabalho_g2_sisinpe/
 ```
 
 ## Testes
-```
-colocar os testes
-```
+- Executar os testes automatizados: `uv run pytest -v`
+
+- Executar com relatório de cobertura: `uv run pytest --cov=trabalho_g2_sisinpe --cov-report= team-missing`
 
 ## Como Iniciar
 Na pasta inicial do projeto, basta executar o comando: `./run.sh`
